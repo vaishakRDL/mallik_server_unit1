@@ -2971,56 +2971,6 @@ exports.insertGSTSalesInvoice = async (req, res) => {
     const incNo = invStStr;
     let gstIncNo = Number(incNo);
 
-    // for (let itemsArr of itemsList) {
-
-    //   // Validate quantities before inserting
-    //   for (const dt of itemsArr) {
-    //     const invQty = parseFloat(dt.invQty);
-    //     const soQty = parseFloat(dt.Qty);
-
-    //     if (invQty > soQty) {
-    //       throw new CustomError(
-    //         `InvQty: ${invQty} cannot be greater than SoQty: ${soQty} for Item Code: ${dt.itemCode}`,
-    //         400
-    //       );
-    //     }
-
-    //     if (invQty <= 0) {
-    //       throw new CustomError(
-    //         `InvQty Can't be 0 for Item Code: ${dt.itemCode}`,
-    //         400
-    //       );
-    //     }
-    //   }
-
-    //   const invSt = String(gstIncNo).padStart(incNo.length, '0');
-    //   const invNo = `${docPrefix}${invSt}`;
-
-    //   // GST calculation
-    //   const GC = gstCalculation(GD, itemsArr);
-    //   const gstValues = [
-    //     GC.totalQty, GC.taxableValueforGST, GC.afterDiscounts, GC.afterAdditionalCharges, GC.amountForGSTpayable, GC.cgstAmount, GC.sgstAmount, GC.afterGST,
-    //     GC.tcsAmount, GC.subTcsAmount, GC.cessAmount, GC.totalAmount, GC.roundDiff, GC.invoiceAmount, GC.totalInWords
-    //   ];
-
-    //   // //console.log([invSt, invNo, ...invoiceValues, ...gstValues])
-    //   const [gstRows] = await conn.execute(invoiceQuery, [invSt, invNo, ...invoiceValues, ...gstValues]);
-
-    //   if (gstRows.affectedRows === 0) {
-    //     throw new CustomError(`Error inserting into gstsalesinvo for ${invNo}`, 500);
-    //   }
-    //   const invoiceID = gstRows.insertId;
-
-    //   await conn.query(
-    //     `INSERT INTO gstsalesinvoItem (gstsalesinvo_id, partNo, partName, uom, soNo, poNo, poId, poItemId, soQty, cumQty, pendQty, hsnCode, schDate, invQty, invRate, invAmt, itemLedger, descOfPackage, cdcItmId, fgitemCode, nrdc, delMstId, delDtlId) VALUES ?`,
-    //     [itemsArr.map((dt) => [
-    //       invoiceID, dt.itemCode, dt.itemName, dt.uom, dt.soNo, dt.poNo, dt.poId, dt.poItemId, dt.Qty, dt.cumQty ?? 0, dt.pendQty,
-    //       dt.hsnCode, dt.schDate, dt.invQty, dt.stdRate, dt.amt, dt.itemLedger, dt.descOfPackage, dt.cdcItmId, dt.itemCode, dt.nrdc, dt.delMstId, dt.delDtlId
-    //     ])]
-    //   );
-    //   gstIncNo++;
-    //   await updateDocCounter(conn, 'GSTSalesinvoice');
-    // }
 
     for (let itemsArr of itemsList) {
 
