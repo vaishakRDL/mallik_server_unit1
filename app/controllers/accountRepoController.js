@@ -1530,10 +1530,10 @@ exports.custDc = async (req, res) => {
 
                 if (existingItem) {
                     existingItem.invoicedQty += Number(row.accQty) || 0;
-                    existingItem.pendingQty += Number(row.pendQty) || 0;
+                    // existingItem.pendingQty += Number(row.pendQty) || 0;
                     existingItem.shortQty += Number(row.shortclsQty) || 0;
                     existingItem.invQty += Number(row.invQty) || 0;
-                    existingItem.cumQty += Number(row.cumQty) || 0;
+                    // existingItem.cumQty += Number(row.cumQty) || 0;
 
                     const effectiveRate = Number(row.rate) || Number(row.stdRate) || 0;
                     existingItem.value += (Number(row.invQty) || 0) * effectiveRate;
