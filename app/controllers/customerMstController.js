@@ -34,16 +34,6 @@ const customerDocuments = async (conn, customerId, files) => {
   }
 };
 
-const customerMultiAddress = async (conn, customerId, multiAddress) => {
-  if (!multiAddress || multiAddress.length === 0) return;
-  for (const add of multiAddress) {
-    await conn.execute(
-      `INSERT INTO cus_multi_add (cId, code, custName, address,	gstNo) VALUES (?,?,?,?,?)`,
-      [customerId, add.code, add.custName, add.address, add.gstNo]
-    );
-  }
-};
-
 const customerContactPersons = async (conn, customerId, contactPersons) => {
   if (!contactPersons || contactPersons.length === 0) return;
   for (const c of contactPersons) {
