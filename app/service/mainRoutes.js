@@ -88,6 +88,7 @@ module.exports = (app) => {
     router.use("/stockTransfer", require("../routes/stockTransfer"));
     router.use("/dispatchDashboard", require("../routes/dispatchDashApi"));
     router.use("/dashboardRemarks", require("../routes/remarksApi"));
+    router.use("/stockCorrection", require("../routes/stockCorrectionApi"));
 
     // Purchase
     router.use("/suppVsItem", require("../routes/suppVsItemApi"));
