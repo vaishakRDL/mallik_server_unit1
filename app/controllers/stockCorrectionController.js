@@ -1,6 +1,7 @@
 const excel = require('exceljs');
 const { connection, handleErrorResponse, handleSuccessResponse } = require('../config/dbSql');
 const { decodeExcelBase64 } = require('../utility/utilityFunction');
+const { resetIssueQohForIds } = require('./grnController');
 
 // How many item codes to resolve per SELECT ... IN (...) round trip.
 // Keeps memory / packet size bounded when the sheet holds 50k-70k rows.
@@ -8,6 +9,9 @@ const LOOKUP_CHUNK = 5000;
 
 // How many store rows to write per bulk INSERT (2 rows per uploaded item).
 const INSERT_CHUNK = 4000;
+
+// How many items to fold into one CASE-based items.totStk/allocStk UPDATE.
+const STOCK_UPDATE_CHUNK = 2000;
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -32,18 +36,6 @@ const toQty = (v) => {
     if (v === null || v === undefined || v === '') return NaN;
     if (typeof v === 'number') return v;
     return Number(String(v).replace(/,/g, '').trim());
-};
-
-// DDMMYYYYHHmmss (Asia/Kolkata), e.g. 12092026142001 - always 14 digits, so batch numbers stay unique and sortable.
-const dateTimeStamp = () => {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-    }).formatToParts(new Date());
-
-    const get = (type) => parts.find(p => p.type === type).value;
-    return `${get('day')}${get('month')}${get('year')}${get('hour')}${get('minute')}${get('second')}`;
 };
 
 /* ----------------------------------------------------------------- template */
@@ -197,15 +189,26 @@ exports.import = async (req, res) => {
 
 /* --------------------------------------------------------------- storeToMain */
 /**
- * Commit the corrected stock into the `store` ledger (no other stock table is
- * touched). For every uploaded item TWO rows are written, in this order:
+ * Commit the corrected stock, in one transaction, in this order:
  *
- *   Row 1 - reset : totQty = 0            -> the running balance is forced to zero
- *   Row 2 - set   : inwardQty = qty, totQty = qty  -> the uploaded quantity
+ *   1. Close off every existing GRN lot for these items across all 6 GRN
+ *      source tables (issueQoh = 0, issueStatus = 1) via resetIssueQohForIds —
+ *      see grnController. Whatever was still "open" under the old, mismatched
+ *      count is no longer issuable.
+ *   2. Write TWO `store` ledger rows per uploaded item:
+ *        Row 1 - reset : totQty = 0                     -> balance forced to zero
+ *        Row 2 - set   : inwardQty = qty, totQty = qty   -> the uploaded quantity
+ *      Row 1 always gets a lower id than Row 2 for the same item, so the
+ *      ledger reads reset-then-set.
+ *   3. Set items.totStk/allocStk to the corrected qty (summed per item across
+ *      its rows in this batch).
+ *   4. Insert a fresh op_balance row per uploaded item/grn pair, fully
+ *      issuable (issueQoh = qty) — this becomes the new opening stock that
+ *      GRN issuance draws from going forward, replacing the lots closed off
+ *      in step 1.
  *
- * Row 1 always gets a lower id than Row 2 for the same item, so the ledger reads
- * reset-then-set. Everything runs in one transaction; all rows of one upload
- * share a batch reference (docNo) so the pair can be traced later.
+ * All rows of one upload share a batch reference (docNo/batchNo) so the
+ * whole correction can be traced later.
  */
 exports.storeToMain = async (req, res) => {
     const conn = await connection.getConnection();
@@ -227,7 +230,16 @@ exports.storeToMain = async (req, res) => {
             return res.status(400).json({ success: false, message: 'No valid items to import' });
         }
 
-        const batchNo = `SC-${dateTimeStamp()}`;
+        const batchNo = `SC-${Date.now()}`;
+        const itemIds = [...new Set(clean.map(i => i.itemId))];
+
+        // Received qty per item, summed across every grn/lot row uploaded for
+        // that item — this is what items.totStk/allocStk get set to below.
+        const qtyByItem = new Map();
+        for (const item of clean) {
+            qtyByItem.set(item.itemId, (qtyByItem.get(item.itemId) || 0) + item.qty);
+        }
+        const qtyEntries = [...qtyByItem.entries()]; // [itemId, receivedQty][]
 
         // 2 rows per item: [itemId, itemCode, docType, docNo, grnNo, inwardQty, totQty, stkCrt, addedBy]
         const values = [];
@@ -244,9 +256,51 @@ exports.storeToMain = async (req, res) => {
 
         await conn.beginTransaction();
 
+        // Close off old GRN entries (issueQoh = 0, issueStatus = 1) across all
+        // 6 GRN source tables for these items BEFORE writing the corrected
+        // balance, so stale/open ledgers don't linger under the new totQty.
+        // Same transaction as the correction itself — atomic together.
+        const grnReset = await resetIssueQohForIds(conn, itemIds);
+
         // chunk the bulk insert so a 50k-70k row file stays within packet limits
         for (let i = 0; i < values.length; i += INSERT_CHUNK) {
             await conn.query(insertSql, [values.slice(i, i + INSERT_CHUNK)]);
+        }
+
+        // Next, set items.totStk/allocStk to the received qty for each item
+        // (summed across its rows in this batch) — the corrected qty replaces
+        // whatever was cached there, same as the store ledger's reset-then-set.
+        // allocStk mirrors totStk via the same CASE result rather than a second
+        // one — single-table UPDATEs evaluate SET assignments left to right, so
+        // this halves the WHEN branches and bound params per chunk.
+        for (let i = 0; i < qtyEntries.length; i += STOCK_UPDATE_CHUNK) {
+            const slice = qtyEntries.slice(i, i + STOCK_UPDATE_CHUNK);
+            const caseStatements = slice.map(() => `WHEN ? THEN ?`).join(' ');
+            const caseParams = slice.flat(); // [itemId, qty, itemId, qty, ...]
+            const ids = slice.map(([itemId]) => itemId);
+
+            await conn.query(`
+                UPDATE items
+                SET totStk = CASE id ${caseStatements} END,
+                    allocStk = totStk
+                WHERE id IN (${ids.map(() => '?').join(',')})
+            `, [...caseParams, ...ids]);
+        }
+
+        // Finally, record the corrected qty as this item's new opening balance —
+        // the 6 GRN source tables were just closed off above (issueQoh = 0), so
+        // from now on GRN issuance for these items draws from these fresh
+        // op_balance rows instead. One row per item/grn pair in the upload,
+        // fully issuable (issueQoh = qty, issueStatus defaults to 0/open).
+        const opBalanceValues = clean.map(item => [item.itemId, item.itemCode, item.grn, item.qty, user, item.qty]);
+
+        const opBalanceInsertSql = `
+            INSERT INTO op_balance (itemId, itemCode, grn, qty, addedBy, issueQoh)
+            VALUES ?
+        `;
+
+        for (let i = 0; i < opBalanceValues.length; i += INSERT_CHUNK) {
+            await conn.query(opBalanceInsertSql, [opBalanceValues.slice(i, i + INSERT_CHUNK)]);
         }
 
         await conn.commit();
@@ -254,7 +308,10 @@ exports.storeToMain = async (req, res) => {
         return handleSuccessResponse(res, 'Stock correction imported successfully', {
             batchNo,
             itemsProcessed: clean.length,
-            rowsInserted: values.length
+            rowsInserted: values.length,
+            itemsStockUpdated: qtyEntries.length,
+            opBalanceRowsInserted: opBalanceValues.length,
+            grnReset
         });
     } catch (err) {
         await conn.rollback();
