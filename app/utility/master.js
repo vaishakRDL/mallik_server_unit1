@@ -150,78 +150,78 @@ const collection = {
 function query(master, queryTye) {
     const array = {
         currency: {
-            insert: 'INSERT INTO mst_currency (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_currency SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_currency (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_currency SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_currency SET dflag=1 WHERE id = ?'
         },
         customerGroup: {
-            insert: 'INSERT INTO mst_cust_group (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_cust_group SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_cust_group (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_cust_group SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_cust_group SET dflag=1 WHERE id = ?'
         },
         pm: {
-            insert: 'INSERT INTO mst_pm (code, name, vendorProcess, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_pm SET code=?, name=?, vendorProcess=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_pm (code, name, vendorProcess, description) VALUES (?, ?, ?, ?)',
+            update: 'UPDATE mst_pm SET code=?, name=?, vendorProcess=?, description=? WHERE id=?',
             delete: 'UPDATE mst_pm SET dflag=1 WHERE id = ?'
         },
         machine: {
-            insert: 'INSERT INTO mst_machine (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_machine SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_machine (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_machine SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_machine SET dflag=1 WHERE id = ?'
         },
         role: {
-            insert: 'INSERT INTO mst_role (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_role SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_role (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_role SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_role SET dflag=1 WHERE id = ?'
         },
         department: {
-            insert: 'INSERT INTO mst_department (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_department SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_department (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_department SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_department SET dflag=1 WHERE id = ?'
         },
         sp: {
-            insert: 'INSERT INTO mst_sp (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_sp SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_sp (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_sp SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_sp SET dflag=1 WHERE id = ?'
         },
         dtr: {
-            insert: 'INSERT INTO mst_dtr (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_dtr SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_dtr (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_dtr SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_dtr SET dflag=1 WHERE id = ?'
         },
         section: {
-            insert: 'INSERT INTO mst_section ( name, inactiveStatus, inactiveRemarks,description) VALUES ( ?, ?,?,?)',
-            update: 'UPDATE mst_section SET  name=?,inactiveStatus = ?, inactiveRemarks = ?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_section (name, description) VALUES (?, ?)',
+            update: 'UPDATE mst_section SET name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_section SET dflag=1 WHERE id = ?'
         },
         city: {
-            insert: 'INSERT INTO mst_city (code, countryId,  stateId, name, inactiveStatus, inactiveRemarks, description) VALUES ( ?, ?, ?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_city SET code=?, countryId=?, stateId=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_city (code, countryId, stateId, name, description) VALUES (?, ?, ?, ?, ?)',
+            update: 'UPDATE mst_city SET code=?, countryId=?, stateId=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_city SET dflag=1 WHERE id = ?'
         },
         state: {
-            insert: 'INSERT INTO mst_state (code, countryId, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_state SET code=?, countryId=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_state (code, countryId, name, description) VALUES (?, ?, ?, ?)',
+            update: 'UPDATE mst_state SET code=?, countryId=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_state SET dflag=1 WHERE id = ?'
         },
         country: {
-            insert: 'INSERT INTO mst_country (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_country SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_country (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_country SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_country SET dflag=1 WHERE id = ?'
         },
         supplierGroup: {
-            insert: 'INSERT INTO mst_sup_group (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_sup_group SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_sup_group (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_sup_group SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_sup_group SET dflag=1 WHERE id = ?'
         },
         tool: {
-            insert: 'INSERT INTO mst_tool (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_tool SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_tool (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_tool SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_tool SET dflag=1 WHERE id = ?'
         },
         uom: {
-            insert: 'INSERT INTO mst_uom (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_uom SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_uom (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_uom SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_uom SET dflag=1 WHERE id = ?'
         },
         supplyType: {
@@ -240,23 +240,23 @@ function query(master, queryTye) {
             delete: 'UPDATE mst_sup_place SET dflag=1 WHERE id = ?'
         },
         designation: {
-            insert: 'INSERT INTO mst_designation (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_designation SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_designation (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_designation SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_designation SET dflag=1 WHERE id = ?'
         },
         itemGroup: {
-            insert: 'INSERT INTO mst_item_group (code, name, inactiveStatus, inactiveRemarks, description, chapterHdr, isstoreGroup) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_item_group SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=?, chapterHdr=?, isstoreGroup=? WHERE id=?',
+            insert: 'INSERT INTO mst_item_group (code, name, description, chapterHdr, isstoreGroup) VALUES (?, ?, ?, ?, ?)',
+            update: 'UPDATE mst_item_group SET code=?, name=?, description=?, chapterHdr=?, isstoreGroup=? WHERE id=?',
             delete: 'UPDATE mst_item_group SET dflag=1 WHERE id = ?'
         },
         tarrif: {
-            insert: 'INSERT INTO mst_tarrif (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_tarrif SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_tarrif (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_tarrif SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_tarrif SET dflag=1 WHERE id = ?'
         },
         trf: {
-            insert: 'INSERT INTO mst_trf (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_trf SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_trf (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_trf SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_trf SET dflag=1 WHERE id = ?'
         },
         orderType: {
@@ -265,8 +265,8 @@ function query(master, queryTye) {
             delete: 'UPDATE orderTypes SET dflag=1 WHERE id = ?'
         },
         menu: {
-            insert: 'INSERT INTO mst_menu (type, code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_menu SET  type=?, code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_menu (type, code, name, description) VALUES (?, ?, ?, ?)',
+            update: 'UPDATE mst_menu SET type=?, code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_menu SET dflag=1 WHERE id = ?'
         },
         location: {
@@ -275,13 +275,13 @@ function query(master, queryTye) {
             delete: 'UPDATE mst_location SET dflag=1 WHERE id = ?'
         },
         displayName: {
-            insert: 'INSERT INTO mst_display_name (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_display_name SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_display_name (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_display_name SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_display_name SET dflag=1 WHERE id = ?'
         },
         inspectionLevel: {
-            insert: 'INSERT INTO mst_inspection_level (code, name, inactiveStatus, inactiveRemarks, description) VALUES (?, ?, ?, ?, ?)',
-            update: 'UPDATE mst_inspection_level SET code=?, name=?, inactiveStatus=?, inactiveRemarks=?, description=? WHERE id=?',
+            insert: 'INSERT INTO mst_inspection_level (code, name, description) VALUES (?, ?, ?)',
+            update: 'UPDATE mst_inspection_level SET code=?, name=?, description=? WHERE id=?',
             delete: 'UPDATE mst_inspection_level SET dflag=1 WHERE id = ?'
         },
         problemCategory: {
@@ -304,33 +304,33 @@ function query(master, queryTye) {
 
 function value(master, data) {
     const array = {
-        currency: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        customerGroup: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        pm: [data.code, data.name, data.vendorProcess, data.inactiveStatus, data.inactiveRemarks, data.description],
-        machine: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        role: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        department: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        sp: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        dtr: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        section: [data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        city: [data.code, data.countryId, data.stateId, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        state: [data.code, data.countryId, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        country: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        supplierGroup: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        tool: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        uom: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
+        currency: [data.code, data.name, data.description],
+        customerGroup: [data.code, data.name, data.description],
+        pm: [data.code, data.name, data.vendorProcess, data.description],
+        machine: [data.code, data.name, data.description],
+        role: [data.code, data.name, data.description],
+        department: [data.code, data.name, data.description],
+        sp: [data.code, data.name, data.description],
+        dtr: [data.code, data.name, data.description],
+        section: [data.name, data.description],
+        city: [data.code, data.countryId, data.stateId, data.name, data.description],
+        state: [data.code, data.countryId, data.name, data.description],
+        country: [data.code, data.name, data.description],
+        supplierGroup: [data.code, data.name, data.description],
+        tool: [data.code, data.name, data.description],
+        uom: [data.code, data.name, data.description],
         supplyType: [data.name, data.description],
         gstinOrUin: [data.name, data.description],
         placeOfSupply: [data.name, data.description, data.stateCode ?? null],
-        designation: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        itemGroup: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description, data.chapterHdr, data.isstoreGroup],
-        tarrif: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        trf: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
+        designation: [data.code, data.name, data.description],
+        itemGroup: [data.code, data.name, data.description, data.chapterHdr, data.isstoreGroup],
+        tarrif: [data.code, data.name, data.description],
+        trf: [data.code, data.name, data.description],
         orderType: [data.orderType, data.description],
-        menu: [data.type, data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
+        menu: [data.type, data.code, data.name, data.description],
         location: [data.country, data.state, data.city, data.description ?? null],
-        displayName: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
-        inspectionLevel: [data.code, data.name, data.inactiveStatus, data.inactiveRemarks, data.description],
+        displayName: [data.code, data.name, data.description],
+        inspectionLevel: [data.code, data.name, data.description],
         problemCategory: [data.name, data.description],
         natureOfProblem: [data.name, data.description],
     };
