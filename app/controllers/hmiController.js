@@ -1140,49 +1140,46 @@ function getISOWeek(date = new Date()) {
 }
 
 exports.generateBarcodeLabel = async (req, res) => {
-    try {
-        const { machineId, Qty } = req.query;
+    const { machineId, Qty } = req.query;
+    const qty = parseInt(Qty, 10);
 
+    if (!machineId || !Number.isInteger(qty) || qty <= 0) {
+        return handleErrorResponse(res, new CustomError('Invalid machineId or Qty', 400));
+    }
+
+    const conn = await connection.getConnection();
+
+    try {
         const now = new Date();
         const yy = now.getFullYear() % 100;
         const week = getISOWeek(now);
 
-        // Atomic weekly reset + range reservation
-        const [result] = await connection.execute(
-            `
-            UPDATE barcode_labels
-            SET
-                counter = CASE
-                WHEN counter_year <> ? OR counter_week <> ?
-                    THEN ?
-                ELSE counter + ?
-                END,
-                counter_year = ?,
-                counter_week = ?,
-                counter = LAST_INSERT_ID(counter)
-            WHERE id = ?
-            `,
-            [
-                yy, week,
-                Qty,
-                Qty,
-                yy, week,
-                machineId
-            ]
+        await conn.beginTransaction();
+
+        // Lock the row so concurrent requests for the same machineId serialize
+        const [[row]] = await conn.execute(
+            `SELECT counter, counter_year, counter_week FROM barcode_labels WHERE id = ? FOR UPDATE`,
+            [machineId]
         );
 
-        if (result.affectedRows === 0) {
-            return handleErrorResponse(res, 'Invalid machineId');
+        if (!row) {
+            await conn.rollback();
+            return handleErrorResponse(res, new CustomError('Invalid machineId', 400));
         }
 
-        const [[{ lastCounter }]] = await connection.execute(
-            `SELECT LAST_INSERT_ID() AS lastCounter`
+        const isNewPeriod = row.counter_year !== yy || row.counter_week !== week;
+        const newCounter = isNewPeriod ? qty : row.counter + qty;
+        const startCounter = newCounter - qty + 1;
+
+        await conn.execute(
+            `UPDATE barcode_labels SET counter = ?, counter_year = ?, counter_week = ? WHERE id = ?`,
+            [newCounter, yy, week, machineId]
         );
 
-        const startCounter = lastCounter - Qty + 1;
+        await conn.commit();
 
         const barcodes = [];
-        for (let i = 0; i < Qty; i++) {
+        for (let i = 0; i < qty; i++) {
             barcodes.push(
                 String(yy).padStart(2, '0') +
                 String(week).padStart(2, '0') +
@@ -1193,7 +1190,10 @@ exports.generateBarcodeLabel = async (req, res) => {
 
         return handleSuccessResponse(res, 'Weekly barcode labels', barcodes);
     } catch (err) {
+        await conn.rollback();
         return handleErrorResponse(res, err);
+    } finally {
+        conn.release();
     }
 };
 
