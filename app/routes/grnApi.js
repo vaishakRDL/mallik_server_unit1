@@ -7,5 +7,6 @@ router.put('/issue-automatic', grn.issueAutomatic);
 
 router.post('/fetch', grn.fetchGrnNo);
 router.post('/issue', grn.assignGrn);
+router.post('/reset-stock', grn.resetGrnStock);
 
 module.exports = router;

@@ -317,6 +317,130 @@ exports.assignGrn = async (req, res) => {
     }
 };
 
+// stock in bulk. Keeps query size/lock time bounded for a few-thousand-item batch.
+const RESET_CHUNK = 2000;
+
+const chunkArray = (arr, size) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+};
+
+// Core of the reset: given an open transaction connection and a list of item
+const resetIssueQohForIds = async (conn, ids) => {
+    const totals = { op: 0, lot: 0, fg: 0, po: 0, mrn: 0, pbWithoutPo: 0 };
+
+    for (const idChunk of chunkArray(ids, RESET_CHUNK)) {
+        const placeholders = idChunk.map(() => '?').join(',');
+
+        // OPENING BALANCE
+        const [opResult] = await conn.query(`
+            UPDATE op_balance
+            SET issueQoh = 0, issueStatus = 1
+            WHERE itemId IN (${placeholders})
+        `, idChunk);
+
+        // PO LOT
+        const [lotResult] = await conn.query(`
+            UPDATE po_bill_lot
+            SET issueQoh = 0, issueStatus = 1
+            WHERE itemId IN (${placeholders})
+        `, idChunk);
+
+        // FG STOCK
+        const [fgResult] = await conn.query(`
+            UPDATE fg_stock
+            SET issueQoh = 0, issueStatus = 1
+            WHERE itemId IN (${placeholders})
+        `, idChunk);
+
+        // PO — matches the "own item vs conversion part" logic used by fetchGrn / materialIssue.
+        const [poResult] = await conn.query(`
+            UPDATE po_bill_dtl pbd
+            SET pbd.issueQoh = 0, pbd.issueStatus = 1
+            WHERE
+                (pbd.conversionPart IS NOT NULL AND pbd.conversionPart <> '' AND pbd.conversionPartId IN (${placeholders}))
+             OR ((pbd.conversionPart IS NULL OR pbd.conversionPart = '') AND pbd.itemName IN (${placeholders}))
+        `, [...idChunk, ...idChunk]);
+
+        // MRN (only docType = 'Mrn' rows carry this ledger)
+        const [mrnResult] = await conn.query(`
+            UPDATE store
+            SET issueQoh = 0, issueStatus = 1
+            WHERE docType = 'Mrn' AND itemId IN (${placeholders})
+        `, idChunk);
+
+        // PO BILL WITHOUT PO
+        const [poWoPoResult] = await conn.query(`
+            UPDATE pob_wo_po_dtl
+            SET issueQoh = 0, issueStatus = 1
+            WHERE
+                (NULLIF(conversionPart, '') IS NOT NULL AND conversionPartId IN (${placeholders}))
+             OR (NULLIF(conversionPart, '') IS NULL AND itemId IN (${placeholders}))
+        `, [...idChunk, ...idChunk]);
+
+        totals.op += opResult.affectedRows;
+        totals.lot += lotResult.affectedRows;
+        totals.fg += fgResult.affectedRows;
+        totals.po += poResult.affectedRows;
+        totals.mrn += mrnResult.affectedRows;
+        totals.pbWithoutPo += poWoPoResult.affectedRows;
+    }
+
+    return totals;
+};
+exports.resetIssueQohForIds = resetIssueQohForIds;
+
+// resetIssueQohForIds does the actual per-table reset.
+exports.resetGrnStock = async (req, res) => {
+    const conn = await connection.getConnection();
+    await conn.beginTransaction();
+
+    try {
+        const rawCodes = Array.isArray(req.body.itemCodes)
+            ? req.body.itemCodes
+            : (req.body.itemCode ? [req.body.itemCode] : []);
+
+        const itemCodes = [...new Set(rawCodes.map(c => String(c).trim()).filter(Boolean))];
+        if (!itemCodes.length) {
+            throw new CustomError('itemCode or itemCodes is required', 400);
+        }
+
+        // Resolve item codes -> ids in batched IN(...) lookups
+        const idByCode = new Map();
+        for (const codeChunk of chunkArray(itemCodes, RESET_CHUNK)) {
+            const [found] = await conn.query(
+                `SELECT id, itemCode FROM items WHERE itemCode IN (?)`,
+                [codeChunk]
+            );
+            for (const r of found) idByCode.set(r.itemCode, r.id);
+        }
+
+        const notFound = itemCodes.filter(c => !idByCode.has(c));
+        const ids = [...idByCode.values()];
+
+        if (!ids.length) {
+            throw new CustomError('None of the given item(s) were found!', 404);
+        }
+
+        const totals = await resetIssueQohForIds(conn, ids);
+
+        await conn.commit();
+
+        return handleSuccessResponse(res, 'GRN stock reset successfully', {
+            itemsRequested: itemCodes.length,
+            itemsMatched: ids.length,
+            notFound,
+            rowsReset: totals
+        });
+    } catch (err) {
+        await conn.rollback();
+        return handleErrorResponse(res, err);
+    } finally {
+        conn.release();
+    }
+};
+
 exports.fetchGrnNo = async (req, res) => {
     try {
         const { itemCode } = req.body;

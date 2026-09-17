@@ -66,8 +66,8 @@ async function fetchItemsHmi(bomMstId, itemId = null, machineId, jcId, jcQty) {
 
 async function fetchItemsProgrammer(bomMstId, itemId = null, machineId, jcId, jcQty) {
     const query = `
-        SELECT items.id, items.itemCode AS SITEMCODE, items.itemName AS SITEMNAME, items.materialThickness AS MTHICKNESS, items.material, 
-            (CAST(bom.Qty AS SIGNED) * ?) as QTY, mrp.id as mrpId, mrp.Child_Produced_Qty as Child_Produced_Qty, DATE_FORMAT(op.kanbanDate, '%d-%m-%Y') AS KanbanDate,
+        SELECT mrp.id, items.itemCode AS SITEMCODE, items.itemName AS SITEMNAME, items.materialThickness AS MTHICKNESS, items.material, 
+            (CAST(bom.Qty AS SIGNED) * ?) as QTY, mrp.id as mrpId, mrp.Child_Produced_Qty as Child_Produced_Qty, mrp.nest_qty, DATE_FORMAT(op.kanbanDate, '%d-%m-%Y') AS KanbanDate,
             mrp.isCompleted, ? as jcId, jc.jcNo as JC_No
         FROM bom 
         INNER JOIN bom_mst ON bom_mst.id = bom.bomMstId
@@ -207,6 +207,32 @@ exports.processList = async (req, res) => {
     }
 }
 
+exports.childProcessList = async (req, res) => {
+    try {
+        const { jcNo, itemCode } = req.body;
+
+        const [processRows] = await connection.execute(`
+            SELECT
+                ROW_NUMBER() OVER (ORDER BY c.id) AS sNo,
+                c.processName AS process,
+                c.machineName,
+                c.Produced_QTY AS producedQty,
+                CASE
+                    WHEN c.Produced_QTY = 0 THEN 0
+                    WHEN c.Produced_QTY > 0 AND c.Produced_QTY < c.Qty THEN 1
+                    WHEN c.Produced_QTY = c.Qty THEN 2
+                    WHEN c.Produced_QTY > c.Qty THEN 3
+                END AS colorCode
+            FROM childpart_planning c
+            WHERE c.jcNo = ? AND c.itemCode = ?
+        `, [jcNo, itemCode])
+
+        return handleSuccessResponse(res, 'Process List', processRows);
+    } catch (err) {
+        return handleErrorResponse(res, err);
+    }
+}
+
 exports.fetchCurrentshift = async (conn, machine) => {
     try {
         const shifts = getCurrentShift();
@@ -232,47 +258,6 @@ exports.fetchCurrentshift = async (conn, machine) => {
     }
 }
 
-// exports.updatePartCompletion = async (req, res) => {
-//     const conn = await connection.getConnection();
-//     await conn.beginTransaction();
-
-//     try {
-//         let { jcNo, machine, process, prodShift, prodQty } = req.body;
-//         const curDate = await currentDateTime();
-
-//         if (!prodShift) {
-//             prodShift = await this.fetchCurrentshift(conn, machine);
-//         }
-
-//         await conn.execute(
-//             `SELECT Jobcard_no FROM nesting_table WHERE Jobcard_no = ? LIMIT 1 FOR UPDATE`,
-//             [jcNo]
-//         );
-
-//         await conn.execute(
-//             `UPDATE jobcard_planning
-//              SET producedQty = ?
-//              WHERE jcNo = ? AND machineName = ? AND process = ?`,
-//             [prodQty, jcNo, machine, process]
-//         );
-
-//         await conn.execute(
-//             `UPDATE sf_schedule
-//              SET prod_date = ?, prod_shift = ?, prod_qty = ?
-//              WHERE jcNo = ? AND machine = ? AND process = ?`,
-//             [curDate, prodShift, prodQty, jcNo, machine, process]
-//         );
-
-//         await conn.commit();
-//         return handleSuccessResponse(res, "Update successful");
-//     } catch (err) {
-//         await conn.rollback();
-//         return handleErrorResponse(res, err);
-//     } finally {
-//         conn.release();
-//     }
-// };
-
 exports.updatePartCompletion = async (req, res) => {
     const conn = await connection.getConnection();
 
@@ -282,8 +267,8 @@ exports.updatePartCompletion = async (req, res) => {
         try {
             await conn.beginTransaction();
 
-            let { jcNo, machine, process, prodShift, prodQty } = req.body;
-            const curDate = await currentDateTime();
+            let { jcNo, machine, process, prodDate = null, prodShift, prodQty } = req.body;
+            const curDate = prodDate || await currentDateTime();
 
             if (!prodShift) {
                 prodShift = await this.fetchCurrentshift(conn, machine);
@@ -300,9 +285,78 @@ exports.updatePartCompletion = async (req, res) => {
 
             await conn.execute(
                 `UPDATE sf_schedule
-                 SET prod_date = ?, prod_shift = ?, prod_qty = ?
+                 SET prod_date = ?,
+                     prod_shift = ?,
+                     prod_qty = ?,
+                     status = CASE
+                        WHEN ? >= Qty THEN 1
+                        ELSE 0
+                     END
                  WHERE jcNo = ? AND machine = ? AND process = ?`,
-                [curDate, prodShift, prodQty, jcNo, machine, process]
+                [curDate, prodShift, prodQty, prodQty, jcNo, machine, process]
+            );
+
+            await conn.commit();
+            return handleSuccessResponse(res, "Update successful");
+
+        } catch (err) {
+            await conn.rollback();
+
+            // ✅ Retry on deadlock
+            if (err.code === 'ER_LOCK_DEADLOCK' && attempt < MAX_RETRIES) {
+                continue;
+            }
+
+            return handleErrorResponse(res, err);
+        }
+    }
+
+    conn.release();
+};
+
+exports.updateChildPartCompletion = async (req, res) => {
+    const conn = await connection.getConnection();
+
+    const MAX_RETRIES = 3;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            await conn.beginTransaction();
+
+            let { jcNo, childPart, machine, process, prodDate = null, prodShift, prodQty } = req.body;
+            const curDate = prodDate || await currentDateTime();
+            console.log(prodDate)
+
+            if (!prodShift) {
+                prodShift = await this.fetchCurrentshift(conn, machine);
+            }
+
+            await conn.execute(
+                `UPDATE sf_schedule
+                 SET 
+                    prod_date = ?, 
+                    prod_shift = ?, 
+                    prod_qty = ?,
+                    status = CASE 
+                        WHEN ? >= Qty THEN 1
+                        ELSE 0 
+                    END
+                 WHERE jcNo = ? AND machine = ? AND process = ? AND childItemCode = ?`,
+                [curDate, prodShift, prodQty, prodQty, jcNo, machine, process, childPart]
+            );
+
+            await conn.execute(
+                `UPDATE childpart_planning
+                 SET 
+                    Produced_date = ?,
+                    Shift = ?,
+                    Produced_QTY = ?,
+                    Status = CASE 
+                        WHEN ? >= Qty THEN 1
+                        ELSE 0 
+                    END
+                 WHERE jcNo = ? AND machineName = ? AND itemCode = ?`,
+                [curDate, prodShift, prodQty, prodQty, jcNo, machine, childPart]
             );
 
             await conn.commit();
@@ -368,9 +422,15 @@ exports.updateNestingQty = async (req, res) => {
 
             await conn.execute(
                 `UPDATE sf_schedule
-                 SET prod_date = ?, prod_shift = ?, prod_qty = ?
+                 SET prod_date = ?,
+                     prod_shift = ?,
+                     prod_qty = ?,
+                     status = CASE
+                        WHEN ? >= Qty THEN 1
+                        ELSE 0
+                     END
                  WHERE jcNo = ? AND machine = ?`,
-                [curDate, prodShift, prodQty, jcNo, machine]
+                [curDate, prodShift, updatedTotalProducedQty, updatedTotalProducedQty, jcNo, machine]
             );
 
             await conn.commit();
@@ -562,6 +622,7 @@ exports.machinePlanning = async (req, res) => {
         const totRows = machinePlan.length;
         const totalPages = Math.ceil(totRows / limit);
         const workPlanned = Math.floor(machinePlan.reduce((sum, item) => sum + (Number(item['Work Planned']) || 0), 0));
+        const TotCount = Math.floor(machinePlan.reduce((sum, item) => sum + (Number(item['TotCount']) || 0), 0));
 
         return res.status(200).json({
             success: true,
@@ -569,7 +630,8 @@ exports.machinePlanning = async (req, res) => {
             data: paginatedData,
             totRows,
             totalPages,
-            workPlanned
+            workPlanned,
+            TotCount
         });
     } catch (err) {
         return handleErrorResponse(res, err);
@@ -1153,5 +1215,93 @@ exports.barcodeDetails = async (req, res) => {
         return handleSuccessResponse(res, 'Barcode details', [...partNoRows, ...kittingRows]);
     } catch (err) {
         return handleErrorResponse(res, err);
+    }
+};
+
+exports.saveToolSettingTime = async (req, res) => {
+    try {
+        const { nestingNo, startTime, endTime } = req.body;
+
+        if (!nestingNo || !startTime || !endTime) {
+            throw new CustomError("nestingNo, startTime, and endTime are required", 400);
+        }
+
+        const start = new Date(startTime);
+        const end = new Date(endTime);
+
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            throw new CustomError("Invalid startTime or endTime format", 400);
+        }
+
+        if (end < start) {
+            throw new CustomError("endTime must be after startTime", 400);
+        }
+
+        // Calculate time difference in minutes
+        const toolSettingTime = parseFloat(((end - start) / 1000 / 60).toFixed(2));
+
+        const insertQuery = `
+            INSERT INTO tool_setting_time (nestingNo, startTime, endTime, toolSettingTime)
+            VALUES (?, ?, ?, ?)
+        `;
+
+        await connection.execute(insertQuery, [nestingNo, startTime, endTime, toolSettingTime]);
+
+        return handleSuccessResponse(res, "Tool setting time saved successfully", {
+            nestingNo,
+            startTime,
+            endTime,
+            toolSettingTime
+        });
+    } catch (err) {
+        return handleErrorResponse(res, err);
+    }
+};
+
+// Batch size for the UNION-ALL join below — keeps a single UPDATE statement's
+// parameter count and packet size reasonable for very large nestArr payloads.
+const NEST_QTY_BATCH_SIZE = 500;
+
+exports.updateNestingMapQty = async (req, res) => {
+    const { nestArr = [] } = req.body;
+
+    if (!Array.isArray(nestArr) || nestArr.length === 0) {
+        return handleErrorResponse(res, new CustomError("At least one nesting record is required", 400));
+    }
+
+    const validRows = nestArr.filter(r => r && r.id != null && r.nest_qty != null);
+    if (validRows.length === 0) {
+        return handleErrorResponse(res, new CustomError("No valid nesting records provided", 400));
+    }
+
+    const conn = await connection.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // One UPDATE ... JOIN per chunk instead of one round trip per row — collapses
+        // what used to be `nestArr.length` separate queries (each grabbing its own
+        // pool connection) into ceil(n / BATCH_SIZE) queries on a single connection,
+        // and wraps them in a transaction so a mid-batch failure can't leave a partial update.
+        for (let i = 0; i < validRows.length; i += NEST_QTY_BATCH_SIZE) {
+            const chunk = validRows.slice(i, i + NEST_QTY_BATCH_SIZE);
+            const params = [];
+            const selects = chunk.map(({ id, nest_qty }) => {
+                params.push(nest_qty, id);
+                return `SELECT ? AS nest_qty, ? AS id`;
+            }).join(' UNION ALL ');
+
+            await conn.query(
+                `UPDATE mrp m JOIN (${selects}) t ON m.id = t.id SET m.nest_qty = m.nest_qty + t.nest_qty`,
+                params
+            );
+        }
+
+        await conn.commit();
+        return handleSuccessResponse(res, "Nesting quantities updated successfully");
+    } catch (err) {
+        await conn.rollback();
+        return handleErrorResponse(res, err);
+    } finally {
+        conn.release();
     }
 };
