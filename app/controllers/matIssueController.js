@@ -1,6 +1,5 @@
 const { connection, handleErrorResponse, handleSuccessResponse } = require("../config/dbSql")
 const excel = require('exceljs');
-const { formatFinancialYears } = require("../utility/docNo");
 const { getFYRange } = require("../../cache/fyRange.cache");
 
 exports.fetchMRP = async (req, res) => {
@@ -9,10 +8,9 @@ exports.fetchMRP = async (req, res) => {
         const limit = parseInt(req.query.limit) || 100;
         const offset = (page - 1) * limit;
 
-        // Main query with pagination and fixed serial numbers
+        // Main query with pagination (sNo assigned in JS below — see note there)
         const fetchQuery = `
-            SELECT 
-                (ROW_NUMBER() OVER (ORDER BY sm.id DESC)) AS sNo,
+            SELECT
                 sm.id, sm.category, sm.srnNo, mm.mrpNo, mm.orderNo, mm.poNo, sm.requestedBy,
                 cust.cName AS customerName,
                 DATE_FORMAT(sm.created_at, '%d-%m-%Y') AS date,
@@ -31,59 +29,42 @@ exports.fetchMRP = async (req, res) => {
                 FROM auth_docs
                 GROUP BY refNo
             ) ad ON ad.refNo = sm.srnNo
-            WHERE sm.authorized = ? 
-            AND sm.issueStatus = ? 
+            WHERE sm.authorized = ?
+            AND sm.issueStatus = ?
             AND EXISTS (
                     SELECT 1
-                    FROM srn s 
+                    FROM srn s
                     JOIN items i ON i.id = s.itemId
-                    JOIN (
-                        SELECT st1.itemId, st1.totQty 
-                        FROM store st1
-                        INNER JOIN (
-                            SELECT itemId, MAX(id) AS lastId 
-                            FROM store 
-                            GROUP BY itemId
-                        ) st2 ON st1.itemId = st2.itemId AND st1.id = st2.lastId
-                    ) stk ON stk.itemId = i.id
                     WHERE s.srnMstId = sm.id
-                    AND stk.totQty > 0 
+                    AND i.totStk > 0
                     AND s.issuedQty < (s.Qty - s.shortCloseQty)
             )
             ORDER BY sm.id DESC
             LIMIT ? OFFSET ?
         `;
 
-        // Correct parameters - no offset for serial number
-        const [material] = await connection.execute(fetchQuery, [
+        const [materialRows] = await connection.execute(fetchQuery, [
             1,       // sm.authorized
             0,       // sm.issueStatus
             limit,
             offset
         ]);
 
+        const material = materialRows.map((row, i) => ({ sNo: offset + i + 1, ...row }));
+
         // Count query (distinct SRNs only)
         const [countResult] = await connection.execute(`
             SELECT COUNT(DISTINCT sm.id) AS total
             FROM srn_mst sm
-            WHERE sm.authorized = ? 
-              AND sm.issueStatus = ? 
+            WHERE sm.authorized = ?
+              AND sm.issueStatus = ?
               AND EXISTS (
                     SELECT 1
-                    FROM srn s 
+                    FROM srn s
                     JOIN items i ON i.id = s.itemId
-                    JOIN (
-                        SELECT st1.itemId, st1.totQty 
-                        FROM store st1
-                        INNER JOIN (
-                            SELECT itemId, MAX(id) AS lastId 
-                            FROM store 
-                            GROUP BY itemId
-                        ) st2 ON st1.itemId = st2.itemId AND st1.id = st2.lastId
-                    ) stk ON stk.itemId = i.id
                     WHERE s.srnMstId = sm.id
-                      AND stk.totQty > 0 
-                      AND s.issuedQty < s.Qty 
+                      AND i.totStk > 0
+                      AND s.issuedQty < s.Qty
                       AND s.shortClose = 0
               )
         `, [1, 0]);
@@ -108,12 +89,11 @@ exports.fetchMRP = async (req, res) => {
 async function fetchAllocatedMaterials(srnMstId, loc) {
     try {
         let fetchQuery = `
-            SELECT 
-                ROW_NUMBER() OVER (ORDER BY srn.id) AS sNo, 
-                srn.id, jc.jcNo, items.itemCode, srn.fim, items.material AS rawMaterialName,  
-                items.id AS itemId, items.itemName, items.shelfLifeItem, items.stockControl AS defaultStockLock, 
-                st.totStk, uom.name AS uom, srn.nestNo, srn.jcNos, (srn.Qty - srn.shortCloseQty) AS reqQty, 
-                0 AS allocQty, srn.issuedQty, loc.name AS location, srn_mst.requestedBy, 
+            SELECT
+                srn.id, jc.jcNo, items.itemCode, srn.fim, items.material AS rawMaterialName,
+                items.id AS itemId, items.itemName, items.shelfLifeItem, items.stockControl AS defaultStockLock,
+                items.totStk, uom.name AS uom, srn.nestNo, srn.jcNos, (srn.Qty - srn.shortCloseQty) AS reqQty,
+                0 AS allocQty, srn.issuedQty, loc.name AS location, srn_mst.requestedBy,
                 srn_mst.srnNo, srn_mst.category, DATE_FORMAT(srn_mst.created_at, '%d-%m-%Y') AS srnDate
             FROM srn
             INNER JOIN srn_mst ON srn.srnMstId = srn_mst.id
@@ -121,18 +101,9 @@ async function fetchAllocatedMaterials(srnMstId, loc) {
             LEFT JOIN item_main_loc AS loc ON loc.id = items.mainLocation
             LEFT JOIN job_card jc ON jc.id = srn.jcId
             INNER JOIN mst_uom AS uom ON uom.id = items.uom
-            LEFT JOIN (
-                SELECT s1.itemId, s1.totQty AS totStk
-                FROM store s1
-                INNER JOIN (
-                    SELECT itemId, MAX(id) AS lastId
-                    FROM store
-                    GROUP BY itemId
-                ) x ON s1.itemId = x.itemId AND s1.id = x.lastId
-            ) st ON st.itemId = items.id
-            WHERE srn.srnMstId = ? 
-              AND srn.shortCloseQty < srn.Qty 
-              AND st.totStk > 0
+            WHERE srn.srnMstId = ?
+              AND srn.shortCloseQty < srn.Qty
+              AND items.totStk > 0
               AND srn.issuedQty < srn.Qty
         `;
 
@@ -144,8 +115,10 @@ async function fetchAllocatedMaterials(srnMstId, loc) {
             params.push(...loc);
         }
 
-        const [data] = await connection.execute(fetchQuery, params);
-        return data;
+        fetchQuery += ` ORDER BY srn.id`;
+
+        const [rows] = await connection.execute(fetchQuery, params);
+        return rows.map((row, i) => ({ sNo: i + 1, ...row }));
     } catch (err) {
         throw err;
     }

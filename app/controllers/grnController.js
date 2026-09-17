@@ -22,109 +22,121 @@ exports.fetchGrn = async (req, res) => {
 
         const { id, shelfLifeItem } = items[0];
 
-        /* ===================== OPENING BALANCE ===================== */
-        const [openingBalance] = await connection.execute(`
-            SELECT
-                op.id,
-                op.itemCode,
-                op.grn AS grnRefNO,
-                op.created_at AS grnDate,
-                op.issueQoh AS poQty,
-                'op' AS type
-            FROM op_balance op
-            WHERE op.itemId = ?
-              AND op.issueStatus = 0
-        `, [id]);
+        /* ===================== ALL SOURCES (run concurrently) ===================== */
+        const [
+            [openingBalance],
+            [grnRows],
+            [fgRows],
+            [poRows],
+            [mrnRows],
+            [poBillWithOutPo]
+        ] = await Promise.all([
+            // OPENING BALANCE
+            connection.execute(`
+                SELECT
+                    op.id,
+                    op.itemCode,
+                    op.grn AS grnRefNO,
+                    op.created_at AS grnDate,
+                    op.issueQoh AS poQty,
+                    'op' AS type
+                FROM op_balance op
+                WHERE op.itemId = ?
+                  AND op.issueStatus = 0
+            `, [id]),
 
-        /* ===================== PO LOT ===================== */
-        const [grnRows] = await connection.execute(`
-            SELECT
-                pbl.id,
-                pbd.id AS pbdId,
-                pbd.itemCode,
-                CONCAT(pbl.lotNo, '-', pbl.expiry) AS grnRefNO,
-                pbl.lotDate AS grnDate,
-                pbl.issueQoh AS poQty,
-                'lot' AS type
-            FROM po_bill_dtl pbd
-            INNER JOIN po_bill_lot pbl
-                ON pbl.digit = pbd.digit
-               AND pbl.type = pbd.type
-               AND pbl.itemId = pbd.itemName
-            WHERE pbd.itemName = ?
-              AND pbl.issueStatus = 0
-              AND pbd.qcApproval = 1
-        `, [id]);
+            // PO LOT
+            connection.execute(`
+                SELECT
+                    pbl.id,
+                    pbd.id AS pbdId,
+                    pbd.itemCode,
+                    CONCAT(pbl.lotNo, '-', pbl.expiry) AS grnRefNO,
+                    pbl.lotDate AS grnDate,
+                    pbl.issueQoh AS poQty,
+                    'lot' AS type
+                FROM po_bill_dtl pbd
+                INNER JOIN po_bill_lot pbl
+                    ON pbl.digit = pbd.digit
+                   AND pbl.type = pbd.type
+                   AND pbl.itemId = pbd.itemName
+                WHERE pbd.itemName = ?
+                  AND pbl.issueStatus = 0
+                  AND pbd.qcApproval = 1
+            `, [id]),
 
-        /* ===================== FG STOCK ===================== */
-        const [fgRows] = await connection.execute(`
-            SELECT
-                f.id,
-                f.itemCode,
-                f.grn AS grnRefNO,
-                f.created_at AS grnDate,
-                f.issueQoh AS poQty,
-                'fg' AS type
-            FROM fg_stock f
-            WHERE f.itemId = ?
-              AND f.issueStatus = 0
-        `, [id]);
+            // FG STOCK
+            connection.execute(`
+                SELECT
+                    f.id,
+                    f.itemCode,
+                    f.grn AS grnRefNO,
+                    f.created_at AS grnDate,
+                    f.issueQoh AS poQty,
+                    'fg' AS type
+                FROM fg_stock f
+                WHERE f.itemId = ?
+                  AND f.issueStatus = 0
+            `, [id]),
 
-        /* ===================== PO ===================== */
-        const [poRows] = await connection.execute(`
-            SELECT
-                pbd.id,
-                pbd.itemCode,
-                pb.grnRefNO,
-                pb.date AS grnDate,
-                pbd.issueQoh AS poQty,
-                'po' AS type
-            FROM po_bill_dtl pbd
-            INNER JOIN po_bill pb
-                ON pb.poNo = pbd.poNo
-            WHERE
-            (
-                (pbd.conversionPart IS NOT NULL 
-                AND pbd.conversionPart <> '' 
-                AND pbd.conversionPartId = ?)
-            OR ( (pbd.conversionPart IS NULL OR pbd.conversionPart = '') 
-                AND pbd.itemName = ?)
-            )
-            AND pbd.issueStatus = 0
-        `, [id, id]);
+            // PO
+            connection.execute(`
+                SELECT
+                    pbd.id,
+                    pbd.itemCode,
+                    pb.grnRefNO,
+                    pb.date AS grnDate,
+                    pbd.issueQoh AS poQty,
+                    'po' AS type
+                FROM po_bill_dtl pbd
+                INNER JOIN po_bill pb
+                    ON pb.poNo = pbd.poNo
+                WHERE
+                (
+                    (pbd.conversionPart IS NOT NULL
+                    AND pbd.conversionPart <> ''
+                    AND pbd.conversionPartId = ?)
+                OR ( (pbd.conversionPart IS NULL OR pbd.conversionPart = '')
+                    AND pbd.itemName = ?)
+                )
+                AND pbd.issueStatus = 0
+            `, [id, id]),
 
-        /* ===================== MRN ===================== */
-        const [mrnRows] = await connection.execute(`
-            SELECT
-                id,
-                itemCode,
-                grnNo AS grnRefNO,
-                created_at AS grnDate,
-                issueQoh AS poQty,
-                'mrn' AS type
-            FROM store
-            WHERE docType = 'Mrn'
-              AND itemId = ?
-              AND issueQoh > 0
-        `, [id]);
+            // MRN
+            connection.execute(`
+                SELECT
+                    id,
+                    itemCode,
+                    grnNo AS grnRefNO,
+                    created_at AS grnDate,
+                    issueQoh AS poQty,
+                    'mrn' AS type
+                FROM store
+                WHERE docType = 'Mrn'
+                  AND itemId = ?
+                  AND issueStatus = 0
+                  AND issueQoh > 0
+            `, [id]),
 
-        /* ===================== PO BILL WITHOUT PO ===================== */
-        const [poBillWithOutPo] = await connection.execute(`
-            SELECT
-                id,
-                itemCode,
-                poNo AS grnRefNO,
-                created_at AS grnDate,
-                issueQoh AS poQty,
-                'pbWithoutPo' AS type
-            FROM pob_wo_po_dtl
-            WHERE
-            (
-                (NULLIF(conversionPart, '') IS NOT NULL AND conversionPartId = ?)
-            OR (NULLIF(conversionPart, '') IS NULL AND itemId = ?)
-            )
-            AND issueQoh > 0
-        `, [id, id]);
+            // PO BILL WITHOUT PO
+            connection.execute(`
+                SELECT
+                    id,
+                    itemCode,
+                    poNo AS grnRefNO,
+                    created_at AS grnDate,
+                    issueQoh AS poQty,
+                    'pbWithoutPo' AS type
+                FROM pob_wo_po_dtl
+                WHERE
+                (
+                    (NULLIF(conversionPart, '') IS NOT NULL AND conversionPartId = ?)
+                OR (NULLIF(conversionPart, '') IS NULL AND itemId = ?)
+                )
+                AND issueStatus = 0
+                AND issueQoh > 0
+            `, [id, id])
+        ]);
 
         let grnLists = [
             ...openingBalance,
@@ -204,6 +216,20 @@ const assignGrnToJC = async (conn, srnCategory, srnId, grnNo, issueNo, itemId, t
     }
 };
 
+// Atomically deduct issueQoh and derive issueStatus, guarding against concurrent over-issue.
+const deductWithStatus = async (conn, table, id, quantity) => {
+    const [result] = await conn.execute(
+        `UPDATE ${table}
+         SET issueStatus = CASE WHEN (issueQoh - ?) <= 0 THEN 1 ELSE 0 END,
+             issueQoh = issueQoh - ?
+         WHERE id = ? AND issueQoh >= ?`,
+        [quantity, quantity, id, quantity]
+    );
+    if (result.affectedRows === 0) {
+        throw new CustomError('Stock was consumed by another transaction while processing! Please try issuing again.', 409);
+    }
+};
+
 exports.assignGrn = async (req, res) => {
     const conn = await connection.getConnection();
     await conn.beginTransaction();
@@ -228,61 +254,24 @@ exports.assignGrn = async (req, res) => {
         }
         const issueId = issuedRows.insertId;
 
-        // const [srnRows] = await conn.execute(`
-        //     SELECT sm.srnNo, sm.issueNo, sm.category as srnCategory
-        //     FROM srn s 
-        //     INNER JOIN srn_mst sm ON sm.id = s.srnMstId 
-        //     WHERE s.id = ?`
-        //     , [srnId]);
-
-        // if (srnRows.length === 0) throw new CustomError('SRN not found!', 404);
-
-        // const { srnNo, issueNo, srnCategory } = srnRows[0];
-
         for (const item of data) {
-            const { id, grnNo, grnQty, quantity, type } = item;
+            const { id, grnNo, quantity, type } = item;
 
             if (type === 'lot') {
                 const { pbdId } = item;
 
-                // PO Bill Lot
-                await conn.execute(
-                    `UPDATE po_bill_lot SET issueStatus = ?, issueQoh = issueQoh - ? WHERE id = ?`,
-                    [grnQty === quantity ? 1 : 0, quantity, id]
-                );
-                // Update PO Bill Details
-                await conn.execute(
-                    `UPDATE po_bill_dtl 
-                     SET issueStatus = CASE WHEN (issueQoh - ?) <= 0 THEN 1 ELSE 0 END, 
-                         issueQoh = GREATEST(issueQoh - ?, 0)
-                     WHERE id = ?`,
-                    [quantity, quantity, pbdId ?? id]
-                );
+                await deductWithStatus(conn, 'po_bill_lot', id, quantity);
+                await deductWithStatus(conn, 'po_bill_dtl', pbdId ?? id, quantity);
             } else if (type === 'po') {
-                await conn.execute(
-                    `UPDATE po_bill_dtl SET issueStatus = ?, issueQoh = issueQoh - ? WHERE id = ?`,
-                    [grnQty === quantity ? 1 : 0, quantity, id]
-                );
+                await deductWithStatus(conn, 'po_bill_dtl', id, quantity);
             } else if (type === 'op') {
-                await conn.execute(
-                    `UPDATE op_balance SET issueStatus = ?, issueQoh = issueQoh - ? WHERE id = ?`,
-                    [grnQty === quantity ? 1 : 0, quantity, id]
-                );
+                await deductWithStatus(conn, 'op_balance', id, quantity);
             } else if (type === 'fg') {
-                await conn.execute(
-                    `UPDATE fg_stock SET issueStatus = ?, issueQoh = issueQoh - ? WHERE id = ?`,
-                    [grnQty === quantity ? 1 : 0, quantity, id]
-                );
+                await deductWithStatus(conn, 'fg_stock', id, quantity);
             } else if (type === 'mrn') {
-                await conn.execute(
-                    `UPDATE store SET issueQoh = issueQoh - ? WHERE id = ?`,
-                    [quantity, id]
-                );
+                await deductWithStatus(conn, 'store', id, quantity);
             } else if (type === 'pbWithoutPo') {
-                await conn.execute(
-                    `UPDATE pob_wo_po_dtl SET issueQoh = issueQoh - ? WHERE id = ?`,
-                    [quantity, id]
-                );
+                await deductWithStatus(conn, 'pob_wo_po_dtl', id, quantity);
             } else {
                 throw new CustomError('Invalid GRN type!', 400);
             }
@@ -431,7 +420,7 @@ exports.issueAutomatic = async (req, res) => {
     try {
         const { docNo, issueNo, issuedDate, items } = req.body;
 
-        if (!docNo || !issueNo || !items.length) {
+        if (!docNo || !issueNo || !items || !items.length) {
             throw new CustomError('Missing required parameters!', 400);
         }
         const issuedBy = await getUser(req);
@@ -475,6 +464,7 @@ exports.issueAutomatic = async (req, res) => {
             const { id, jcNos, jcNo, itemId, itemCode, totStk, category, reqQty, issuedQty, shelfLifeItem } = item;
 
             if (!id || !itemId || !itemCode || !category || !reqQty) {
+                console.log(id, itemId, itemCode, category, reqQty);
                 throw new CustomError('Missing required parameters in item!', 400);
             }
 
@@ -542,7 +532,15 @@ exports.issueAutomatic = async (req, res) => {
 
         await conn.commit();
 
-        return handleSuccessResponse(res, 'Issue successful');
+        // issueIds still holds any items that were skipped (no stock found,
+        // shelf-life item, or nothing left to issue) even though the batch
+        // as a whole succeeded — surface them instead of hiding the gap.
+        const skippedItems = [...issueIds.values()];
+        const message = skippedItems.length
+            ? `Issue successful. Skipped (no GRN found): ${skippedItems.join(', ')}`
+            : 'Issue successful';
+
+        return handleSuccessResponse(res, message, { skippedItems });
     } catch (err) {
         await conn.rollback();
         if (err.code === "ER_DUP_ENTRY") {
@@ -565,18 +563,13 @@ async function materialIssue(conn, srnId, itemId, itemCode, plannedQty, issueNo,
         const grnList = [];
 
         const [[item]] = await conn.execute(`
-            SELECT i.id, i.category, i.shelfLifeItem, COALESCE(s.totQty, 0) AS totStk
-            FROM items i 
-            LEFT JOIN store s ON i.id = s.itemId
-            WHERE i.itemCode = ?
-            ORDER BY s.id DESC
-            LIMIT 1
+            SELECT id, category, shelfLifeItem, totStk
+            FROM items
+            WHERE itemCode = ?
         `, [itemCode]);
 
         if (!item) throw new CustomError(`Item not found: ${itemCode}`, 404);
 
-        const shelfLifeItem = item.shelfLifeItem;
-        const itemCategory = item.category;
         const totalStock = Number(item.totStk || 0);
 
         // 2. Calculate effective issue qty
@@ -586,31 +579,21 @@ async function materialIssue(conn, srnId, itemId, itemCode, plannedQty, issueNo,
             return { grnNo: null, totalIssuedQty: 0 };
         }
 
-        // 3. Get opening balance
-        const [openingBalance] = await conn.execute(`
-            SELECT op.id, op.itemCode, op.grn as grnRefNO, op.created_at AS grnDate,
-                op.issueQoh as poQty, 'op' as type
+        const [rows] = await conn.execute(`
+            SELECT op.id, op.itemCode, op.grn AS grnRefNO, op.created_at AS grnDate,
+                op.issueQoh AS poQty, 'op' AS type
             FROM op_balance op
             WHERE op.itemCode = ? AND op.issueStatus = 0 AND op.issueQoh > 0
-        `, [itemCode]);
 
-        // Should not Issue Automatically for Lot Items (Manual Issue Only discussed with shreesha 23/12/25)
-        // const [shelfLifeRows] = await conn.execute(`
-        //     SELECT pbl.id, pbd.id as pbdId, pbd.itemCode, CONCAT(pbl.lotNo, '-', pbl.expiry) as grnRefNO, pbl.lotDate AS grnDate, pbl.issueQoh as poQty, 'lot' as type
-        //     FROM po_bill_dtl pbd
-        //     INNER JOIN po_bill_lot pbl ON pbl.digit = pbd.digit AND pbl.type = pbd.type AND pbl.itemId = pbd.itemName
-        //     WHERE pbd.itemName = ? AND pbl.issueStatus = ? AND pbd.qcApproval = ?
-        //     ORDER BY pbl.expiry
-        // `, [itemId, 0, 1]);
+            UNION ALL
 
-        const [fgRows] = await conn.execute(`
-            SELECT f.id, f.itemCode, f.grn as grnRefNO, f.created_at AS grnDate,
-                f.issueQoh as poQty, 'fg' as type
+            SELECT f.id, f.itemCode, f.grn AS grnRefNO, f.created_at AS grnDate,
+                f.issueQoh AS poQty, 'fg' AS type
             FROM fg_stock f
             WHERE f.itemCode = ? AND f.issueStatus = 0
-        `, [itemCode]);
 
-        const [poRows] = await conn.execute(`
+            UNION ALL
+
             SELECT
                 pbd.id,
                 pbd.itemCode,
@@ -621,36 +604,35 @@ async function materialIssue(conn, srnId, itemId, itemCode, plannedQty, issueNo,
             FROM po_bill_dtl pbd
             INNER JOIN po_bill pb
                 ON pb.digit = pbd.digit
-            AND pb.type = pbd.type
+               AND pb.type = pbd.type
             WHERE
             (
-                (pbd.conversionPart IS NOT NULL 
-                AND pbd.conversionPart <> '' 
+                (pbd.conversionPart IS NOT NULL
+                AND pbd.conversionPart <> ''
                 AND pbd.conversionPartId = ?)
-            OR ( (pbd.conversionPart IS NULL OR pbd.conversionPart = '') 
+            OR ( (pbd.conversionPart IS NULL OR pbd.conversionPart = '')
                 AND pbd.itemName = ?)
             )
-            AND pbd.issueStatus = 0;
-        `, [itemId, itemId]);
+            AND pbd.issueStatus = 0
 
-        const [mrnRows] = await conn.execute(`
-            SELECT id, itemCode, grnNo AS grnRefNO, created_at AS grnDate, issueQoh as poQty, 'mrn' as type
+            UNION ALL
+
+            SELECT id, itemCode, grnNo AS grnRefNO, created_at AS grnDate, issueQoh AS poQty, 'mrn' AS type
             FROM store
-            WHERE docType = ? AND itemId = ? AND issueQoh > ?
-        `, ['Mrn', itemId, 0]);
+            WHERE docType = 'Mrn' AND itemId = ? AND issueStatus = 0 AND issueQoh > 0
 
-        const [poBillWithOutPo] = await conn.execute(`
-            SELECT id, itemCode, poNo AS grnRefNO, created_at AS grnDate, issueQoh as poQty, 'pbWithoutPo' as type 
+            UNION ALL
+
+            SELECT id, itemCode, poNo AS grnRefNO, created_at AS grnDate, issueQoh AS poQty, 'pbWithoutPo' AS type
             FROM pob_wo_po_dtl
             WHERE
             (
                 (NULLIF(conversionPart, '') IS NOT NULL AND conversionPartId = ?)
             OR (NULLIF(conversionPart, '') IS NULL AND itemId = ?)
             )
+            AND issueStatus = 0
             AND issueQoh > 0
-        `, [itemId, itemId]);
-
-        const rows = [...openingBalance, ...fgRows, ...poRows, ...mrnRows, ...poBillWithOutPo];
+        `, [itemCode, itemCode, itemId, itemId, itemId, itemId, itemId]);
 
         rows.sort((a, b) => {
             const d = new Date(a.grnDate) - new Date(b.grnDate);
@@ -675,30 +657,27 @@ async function materialIssue(conn, srnId, itemId, itemCode, plannedQty, issueNo,
             remainingQty -= allocatableQty;
             totalIssuedQty += allocatableQty;
 
-            // Update GRN source table
-            let updateQuery;
-            let updateParams;
+            // Update GRN source table (all six source tables carry issueStatus)
+            const tableMap = {
+                po: 'po_bill_dtl',
+                op: 'op_balance',
+                fg: 'fg_stock',
+                lot: 'po_bill_lot',
+                mrn: 'store',
+                pbWithoutPo: 'pob_wo_po_dtl'
+            };
 
-            const newIssueStatus = numericPoQty === allocatableQty ? 1 : 0;
-
-            if (['po', 'op', 'fg', 'lot'].includes(type)) {
-                const tableMap = {
-                    po: 'po_bill_dtl',
-                    op: 'op_balance',
-                    fg: 'fg_stock',
-                    lot: 'po_bill_lot'
-                };
-                updateQuery = `UPDATE ${tableMap[type]} SET issueStatus = ?, issueQoh = issueQoh - ? WHERE id = ? AND issueQoh >= ?`;
-                updateParams = [newIssueStatus, allocatableQty, id, allocatableQty];
-            } else if (type === 'mrn') {
-                updateQuery = `UPDATE store SET issueQoh = issueQoh - ? WHERE id = ? AND issueQoh >= ?`;
-                updateParams = [allocatableQty, id, allocatableQty];
-            } else if (type === 'pbWithoutPo') {
-                updateQuery = `UPDATE pob_wo_po_dtl SET issueQoh = issueQoh - ? WHERE id = ? AND issueQoh >= ?`;
-                updateParams = [allocatableQty, id, allocatableQty];
-            } else {
+            const table = tableMap[type];
+            if (!table) {
                 throw new CustomError('Invalid GRN type!', 400);
             }
+
+            const updateQuery = `
+                UPDATE ${table}
+                SET issueStatus = CASE WHEN (issueQoh - ?) <= 0 THEN 1 ELSE 0 END,
+                    issueQoh = issueQoh - ?
+                WHERE id = ? AND issueQoh >= ?`;
+            const updateParams = [allocatableQty, allocatableQty, id, allocatableQty];
 
             const [updateResult] = await conn.execute(updateQuery, updateParams);
 
