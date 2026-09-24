@@ -50,8 +50,8 @@ const macAndProDetails = async (conn, mrpMstId) => {
         INNER JOIN item_vs_pm iVp ON iVp.item = jc.itemId
         INNER JOIN mst_pm pm ON pm.id = iVp.process
         INNER JOIN machines m ON m.id = iVp.machineName
-        WHERE jc.mrpMstId = ? AND m.machineName NOT IN (?, ?, ?) AND pm.vendorProcess = ? AND iVp.dflag = ?`,
-        [mrpMstId, 'DXF', 'Assembly', 'INWARD', 0, 0]
+        WHERE jc.mrpMstId = ? AND iVp.dflag = ?`,
+        [mrpMstId, 0]
     );
 
     const productionObj = {};
@@ -59,7 +59,7 @@ const macAndProDetails = async (conn, mrpMstId) => {
         if (!productionObj[i.itemCode]) {
             productionObj[i.itemCode] = { jcId: i.jcId, jcNo: i.jcNo, Qty: i.Qty, processDetails: [] };
         }
-        productionObj[i.itemCode].processDetails.push({ machineName: i.machineName, process: i.process, pTime: i.cycleTime, cTime: i.totTime, count: i.count, totCount: i.totCount, processId: i.processId, machineId: i.machineId });
+        productionObj[i.itemCode].processDetails.push({ itemId: i.itemId, machineName: i.machineName, process: i.process, pTime: i.cycleTime, cTime: i.totTime, count: i.count, totCount: i.totCount, processId: i.processId, machineId: i.machineId });
     });
 
     return productionObj;
