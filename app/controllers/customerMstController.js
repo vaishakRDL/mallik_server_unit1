@@ -1,6 +1,20 @@
 const utility = require("../utility/utilityFunction");
 const { connection, handleErrorResponse, handleSuccessResponse, CustomError } = require("../config/dbSql");
 
+// req.body fields arrive already parsed (express.json()) when sent as JSON,
+// but as JSON strings when sent via multipart/form-data. Handle both.
+const parseJsonField = (value) => {
+  if (Array.isArray(value) || (value && typeof value === "object")) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 exports.search = async (req, res) => {
   try {
     const { q } = req.query;
@@ -75,9 +89,9 @@ exports.store = async (req, res) => {
     await conn.execute(`UPDATE customer SET cId = id WHERE id = ?`, [customerId]);
 
     // Insert related data
-    await customerDocuments(conn, customerId, customerDocs);
-    await customerMultiAddress(conn, customerId, multiAddress);
-    await customerContactPersons(conn, customerId, contactPersons);
+    await customerDocuments(conn, customerId, parseJsonField(customerDocs));
+    await customerMultiAddress(conn, customerId, parseJsonField(multiAddress));
+    await customerContactPersons(conn, customerId, parseJsonField(contactPersons));
 
     await conn.commit();
     return handleSuccessResponse(res, "Successfully added");
@@ -201,9 +215,9 @@ exports.update = async (req, res) => {
     }
 
     // Update related data
-    await updateCustomerDocuments(conn, customerId, customerDocs);
-    await updateCustomerMultiAddress(conn, customerId, multiAddress);
-    await updateCustomerContactPersons(conn, customerId, contactPersons);
+    await customerDocuments(conn, customerId, parseJsonField(customerDocs));
+    await customerMultiAddress(conn, customerId, parseJsonField(multiAddress));
+    await customerContactPersons(conn, customerId, parseJsonField(contactPersons));
 
     await conn.commit();
     return handleSuccessResponse(res, "Customer updated successfully");
