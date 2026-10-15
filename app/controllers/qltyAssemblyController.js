@@ -1030,7 +1030,7 @@ exports.assemblyPlanning = async function (kanbanDate, fim) {
             LEFT JOIN orderlist ol ON ol.sobId = sob.id
             LEFT JOIN item_vs_pm iVp ON iVp.item = items.id
             LEFT JOIN srn ON srn.sobId = sob.id
-            LEFT JOIN itempm_vs_inspec ip ON ip.item = items.id AND type = "Assembly"
+            LEFT JOIN itempm_vs_inspec ip ON ip.item = items.id AND ip.type = "Assembly"
             WHERE 
                 op.kanbanDate = ? AND sob.fimNo LIKE ?
             GROUP BY 
