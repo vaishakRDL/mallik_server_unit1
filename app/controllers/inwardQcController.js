@@ -849,17 +849,19 @@ exports.submit = async (req, res) => {
         // );
 
         const issueQoh = Number(data.conversionQty) > 0 ? Number(data.conversionQty) : Number(data.accQty);
+        
 
         // Update QC Approval in po_bill_dtl
         await conn.execute(
             `UPDATE po_bill_dtl
                 SET qcAuthBy = ?,
                     issueQoh = ?,
+                    issueStatus = CASE WHEN ? > 0 THEN 0 ELSE 1 END,
                     qcApproval = 1
                  WHERE id = ?
                     AND qcApproval <> 1
                 `,
-            [user, issueQoh, data.poBillDtlId]);
+            [user, issueQoh, issueQoh, data.poBillDtlId]);
 
 
         // await updateDocCounter(conn, 'InwardQC');
@@ -1396,10 +1398,11 @@ exports.withoutPosubmit = async (req, res) => {
             `UPDATE pob_wo_po_dtl
                 SET qcAuthBy = ?,
                     issueQoh = ?,
+                    issueStatus = CASE WHEN ? > 0 THEN 0 ELSE 1 END,
                     qcApproval = 1
                 WHERE id = ?
                 AND qcApproval <> 1`,
-            [user, issueQoh, data.poBillDtlId]);
+            [user, issueQoh, issueQoh, data.poBillDtlId]);
 
         await updateDocCounter(conn, 'InwardQC', { docNo: data.qcTestNo });
 
